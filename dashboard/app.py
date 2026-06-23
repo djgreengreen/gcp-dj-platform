@@ -161,20 +161,21 @@ def index():
 def api_data():
     from google.cloud import bigquery
     client = bigquery.Client(project=PROJECT)
-
     # Stats
     stats = client.query(f"""
-        SELECT COUNT(*) as total, COUNT(DISTINCT genre) as genres,
-               COUNTIF(gemini_genre IS NOT NULL) as gemini,
-               ROUND(AVG(bpm),0) as avg_bpm,
-               ROUND(AVG(spotify_energy),2) as avg_energy
-        FROM {TABLE}
+        SELECT
+            COUNT(*) as total,
+            COUNT(DISTINCT genre) as genres,
+            COUNTIF(gemini_genre IS NOT NULL) as gemini,
+            ROUND(AVG(bpm),0) as avg_bpm,
+            ROUND(AVG(spotify_energy),2) as avg_energy
+        FROM `{PROJECT}.dj_funk_marts.dim_tracks`
     """).result().to_dataframe().iloc[0].to_dict()
 
     # Genres
     genres = client.query(f"""
-        SELECT genre FROM {TABLE}
-        WHERE genre IS NOT NULL
+        SELECT genre FROM `{PROJECT}.dj_funk_marts.dim_tracks`
+        WHERE genre IS NOT NULL AND genre != 'Unknown'
         GROUP BY genre ORDER BY COUNT(*) DESC LIMIT 30
     """).result().to_dataframe()["genre"].tolist()
 
@@ -182,12 +183,12 @@ def api_data():
     tracks = client.query(f"""
         SELECT title, artist, genre, bpm, key, key_camelot,
                spotify_energy, spotify_danceability, spotify_valence,
-               gemini_genre, gemini_genre_confidence, energy_level, comment,
+               gemini_genre, gemini_genre_confidence,
+               energy_level, energy_label,
                duration_sec, file_size_mb, ingested_at
-        FROM {TABLE}
+        FROM `{PROJECT}.dj_funk_marts.dim_tracks`
         ORDER BY ingested_at DESC LIMIT 500
     """).result().to_dataframe().to_dict(orient="records")
-
     # Convert NaN floats to null for valid JSON
     for t in tracks:
         for k, v in list(t.items()):
