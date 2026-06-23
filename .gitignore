@@ -1,0 +1,8 @@
+# .gitignore for gcp-dj-platform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/.terraform.lock.hcl
+*.pyc
+__pycache__/

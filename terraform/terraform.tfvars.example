@@ -1,0 +1,13 @@
+# Terraform variables — copy this to terraform.tfvars and fill in your values
+# terraform.tfvars is gitignored — never commit it
+
+project_id      = "xtremetag-1984"
+region          = "australia-southeast1"
+billing_account = "REPLACE-WITH-YOUR-BILLING-ID"  # From: gcloud billing accounts list
+
+# Budget alert emails (optional — add your email to get alerts)
+budget_alert_emails = []
+
+# Spotify API credentials (from your existing .env or Spotify Dashboard)
+spotify_client_id     = ""
+spotify_client_secret = ""
