@@ -96,6 +96,10 @@ resource "google_cloud_run_v2_service" "processor" {
         name  = "OUTPUT_BUCKET"
         value = google_storage_bucket.output.name
       }
+      env {
+        name  = "GEMINI_GENRE_ENABLED"
+        value = "true"
+      }
 
       # Only inject Spotify env vars if secrets exist
       dynamic "env" {
