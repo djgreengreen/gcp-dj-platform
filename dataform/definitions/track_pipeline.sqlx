@@ -1,0 +1,141 @@
+-- Dataform example: Bronze → Silver → Gold
+--
+-- Dataform uses SQLX files: SQL + JavaScript config blocks ({js} … {/js}).
+-- Key differences from dbt:
+--   • SQLX embeds config in the SQL file (no separate YAML files)
+--   • @{var} references project variables from dataform.json
+--   • ref() and source() work the same as dbt
+--   • BigQuery-native: partitioning/clustering are 1st-class config
+--   • Managed execution: no Docker container needed (GCP schedules it)
+
+-- ── Silver: Cleaned staging view (analogous to dbt stg_tracks) ──────
+
+config {
+  type: "view",
+  name: "stg_tracks",
+  description: "Cleaned track data from bronze layer",
+  tags: ["silver", "daily"],
+  columns: {
+    track_id: "SHA256 hash — unique track identifier",
+    artist: "Artist name (clean, trimmed)",
+    title: "Track title (clean, trimmed)",
+    genre: "Gemini-enriched genre",
+    bpm: "Beats per minute (rounded to integer)",
+    energy_label: "Mapped from energy_level (1-10 → low/medium/high)",
+    tags: "Array of applied tags (e.g. [#brazil, #80s])",
+    ingested_at: "When the raw track was first ingested"
+  },
+  bigquery: {
+    partitionBy: "DATE(ingested_at)",
+    clusterBy: ["genre"]
+  }
+}
+
+SELECT
+  track_id,
+  TRIM(artist) AS artist,
+  TRIM(title) AS title,
+  gemini_genre AS genre,
+  SAFE_CAST(ROUND(bpm) AS INT64) AS bpm_int,
+  CASE
+    WHEN energy_level >= 8 THEN 'high'
+    WHEN energy_level >= 5 THEN 'mid'
+    ELSE 'low'
+  END AS energy_label,
+  energy_level,
+  key_camelot,
+  duration_sec,
+  release_year,
+  tags,
+  ingested_at
+FROM ${ref("dj_funk", "tracks")}
+WHERE track_id IS NOT NULL
+
+-- ── Silver: Track type classification (mashup/bootleg/transition) ───
+
+config {
+  type: "view",
+  name: "stg_track_types",
+  description: "Classifies each track's type from title + artist patterns",
+  tags: ["silver", "daily"]
+}
+
+SELECT
+  track_id,
+  CASE
+    WHEN REGEXP_CONTAINS(LOWER(title), r'\bmashup\b')
+      OR REGEXP_CONTAINS(LOWER(title), r'\bvs\.?\b')
+      OR REGEXP_CONTAINS(LOWER(title), r'\bbootleg\b')
+      THEN 'mashup'
+    WHEN REGEXP_CONTAINS(LOWER(title), r'\btransition\b') THEN 'transition'
+    WHEN REGEXP_CONTAINS(LOWER(title), r'\bredrum\b') THEN 'redrum'
+    WHEN REGEXP_CONTAINS(LOWER(title), r'\bintro edit\b') THEN 'intro_edit'
+    ELSE 'normal'
+  END AS track_type
+FROM ${ref("dj_funk", "tracks")}
+
+-- ── Gold: Enriched track dimension (analogous to dbt dim_track) ─────
+
+config {
+  type: "table",
+  name: "dim_tracks",
+  description: "Gold layer — enriched track dimension with all metadata",
+  tags: ["gold", "daily"],
+  columns: {
+    track_id: "Unique track identifier",
+    display_name: "Artist - Title (for UI display)",
+    genre: "Gemini-enriched genre",
+    bpm_range: "Descriptive BPM range",
+    energy_label: "Normalized energy level",
+    track_type: "mashup/transition/bootleg/normal",
+    tag_count: "Number of applied tags",
+    has_brazil_tag: "Flag for #brazil match"
+  },
+  bigquery: {
+    partitionBy: "DATE(ingested_at)",
+    clusterBy: ["genre", "track_type"]
+  }
+}
+
+SELECT
+  s.track_id,
+  CONCAT(s.artist, ' - ', s.title) AS display_name,
+  s.artist,
+  s.title,
+  s.genre,
+  s.bpm_int,
+  CASE
+    WHEN s.bpm_int < 100 THEN 'slow'
+    WHEN s.bpm_int BETWEEN 100 AND 124 THEN 'mid'
+    WHEN s.bpm_int BETWEEN 125 AND 135 THEN 'uptempo'
+    ELSE 'fast'
+  END AS bpm_range,
+  s.energy_label,
+  t.track_type,
+  s.tags,
+  ARRAY_LENGTH(s.tags) AS tag_count,
+  EXISTS(SELECT 1 FROM UNNEST(s.tags) tag WHERE tag = '#brazil') AS has_brazil_tag,
+  s.ingested_at
+FROM ${ref("stg_tracks")} s
+LEFT JOIN ${ref("stg_track_types")} t ON s.track_id = t.track_id
+
+-- ── Gold: Genre analytics (aggregations for dashboard) ──────────────
+
+config {
+  type: "table",
+  name: "agg_genre_stats",
+  description: "Per-genre statistics for the dashboard",
+  tags: ["gold", "daily"]
+}
+
+SELECT
+  genre,
+  COUNT(*) AS track_count,
+  ROUND(AVG(bpm_int), 1) AS avg_bpm,
+  ROUND(AVG(energy_level), 1) AS avg_energy,
+  COUNT(DISTINCT artist) AS unique_artists,
+  COUNTIF(ARRAY_LENGTH(tags) > 0) AS tagged_tracks
+FROM ${ref("dim_tracks")}
+WHERE genre IS NOT NULL
+GROUP BY genre
+ORDER BY track_count DESC

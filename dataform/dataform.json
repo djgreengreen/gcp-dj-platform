@@ -1,0 +1,12 @@
+{
+  "defaultSchema": "dj_funk_dataform",
+  "assertionSchema": "dj_funk_dataform_assertions",
+  "warehouse": "bigquery",
+  "defaultDatabase": "xtremetag-1984",
+  "defaultLocation": "australia-southeast1",
+  "vars": {
+    "bronze_dataset": "dj_funk",
+    "silver_dataset": "dj_funk_staging",
+    "gold_dataset": "dj_funk_marts"
+  }
+}

@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    google-beta = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
   }
   # Use local state for now — migrate to GCS backend later if needed
 }
@@ -17,6 +21,17 @@ provider "google" {
   project         = var.project_id
   region          = var.region
   billing_project = var.project_id
+}
+
+provider "google-beta" {
+  project         = var.project_id
+  region          = var.region
+  billing_project = var.project_id
+}
+
+# Get project info (for service account references)
+data "google_project" "project" {
+  project_id = var.project_id
 }
 
 # ── Enable required APIs ──────────────────────────────────────────
@@ -35,6 +50,9 @@ locals {
     "cloudbilling.googleapis.com",         # Budget alerts
     "monitoring.googleapis.com",           # Monitoring
     "iamcredentials.googleapis.com",       # Service account auth
+    "dataflow.googleapis.com",             # Dataflow (streaming pipeline)
+    "dataproc.googleapis.com",             # Dataproc (Spark similarity)
+    "dataform.googleapis.com",             # Dataform (managed SQL transformations)
   ]
 }
 
